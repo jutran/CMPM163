@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>demo - shader</title>
+		<meta charset="utf-8">
+		<style>
+			body {
+				margin: 0px;
+				overflow: hidden;
+			}
+		</style>
+	</head>
+	<body>
+
+		<div id="container"></div>
+
+		<script src="js/three.js"></script>
+		
+
+		<script id="vertexShader1" type="x-shader/x-vertex">
+
+			precision mediump float;
+			precision mediump int;
+
+			uniform mat4 modelViewMatrix;
+      		uniform mat4 projectionMatrix;
+
+			attribute vec3 position;
+			
+			uniform vec4 my_color;
+      		uniform float time;
+
+			varying vec3 vPosition;
+			varying vec4 vColor;
+
+			void main()	
+			{
+
+				
+				vec3 pos = position;
+
+       	 			//uncomment for basic vertex displacement
+       				// pos.x += sin(pos.x * 10.0 + time) * 0.1;
+       				// pos.y += cos(pos.y * 10.0 + time) * 0.2;
+       				// pos.z += sin(pos.z * 20.0 + time) * 0.3;
+
+        		vPosition = pos;
+				vColor = my_color;
+
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( pos, 1.0 );
+			
+      			}
+
+		</script>
+
+		<script id="vertexShader2" type="x-shader/x-vertex">
+
+			//Three.js gives us these automatically when a perspective camera is bound to the renderer
+			uniform mat4 modelMatrix;
+			uniform mat4 viewMatrix;
+		    uniform mat4 projectionMatrix;
+
+			
+			//Since we are using BufferGeometry, we have defined the attributes that we need manually
+		    attribute vec3 position;
+			attribute vec2 texCoords;
+
+			//link variables between the vertex shader and the fragment shader
+			varying vec2 UV;
+
+			void main() {
+
+	        	//get the vertex position in CAMERA coordinates
+	        	vec4 position = viewMatrix * modelMatrix * vec4(position, 1.0);
+
+				//pass our interpolated texCoords to the fragment shader
+			   	UV = texCoords;
+
+	        	//of course, we always have to output our vertices in clip coords by multiplying through a projection matrix.
+	        	gl_Position = projectionMatrix * position; 	
+     	 	}
+		</script>
+
+		<script id="vertexShader3" type="x-shader/x-vertex">
+
+			precision mediump float;
+			precision mediump int;
+
+			uniform mat4 modelViewMatrix;
+      		uniform mat4 projectionMatrix;
+
+			attribute vec3 position;
+			
+			uniform vec4 my_color;
+      		uniform float time;
+
+			varying vec3 vPosition;
+			varying vec4 vColor;
+
+			void main()	
+			{
+
+				
+				vec3 pos = position;
+
+       	 			//uncomment for basic vertex displacement
+       				pos.x += sin(pos.x * 10.0 + time) * 0.1;
+       				pos.y += cos(pos.y * 10.0 + time) * 0.2;
+       				pos.z += sin(pos.z * 20.0 + time) * 0.3;
+
+        		vPosition = pos;
+				vColor = my_color;
+
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( pos, 1.0 );
+			
+      			}
+
+		</script>
+
+		<script id="fragmentShader1" type="x-shader/x-fragment">
+
+			precision mediump float;
+			precision mediump int;
+
+			uniform float time;
+
+			varying vec3 vPosition;
+			varying vec4 vColor;
+
+			void main()	
+			{
+				vec4 color;
+				color = vec4( vColor );
+				color.r += sin( vPosition.x * 10.0 + time ) * 0.5;
+				color.g += sin( vPosition.x * 10.0 + time ) * 0.7;
+       			color.b += cos( vPosition.x * 5.0 + time  ) * 1.0;
+				gl_FragColor = color;
+			}
+
+		</script>
+
+		<script id="fragmentShader2" type="x-shader/x-fragment">
+
+			precision mediump float;
+
+			//special data type used to access texture stored on GPU
+			uniform sampler2D t1;
+			
+			//changing value - we are using this to mix between the two textures
+			uniform float mixVal;
+
+			//this has to have the same name as in the vertex shader. Here, in the fragment shader, we interpolate across the textureCoordinates
+			varying vec2 UV;
+
+		      	void main() {
+
+				vec4 c1 = texture2D(t1, UV);
+		        	vec4 col = c1;
+		        	gl_FragColor = vec4(col);
+			}
+
+		</script>
+
+		<script id="fragmentShader3" type="x-shader/x-fragment">
+
+			precision mediump float;
+			precision mediump int;
+
+			uniform float time;
+
+			varying vec3 vPosition;
+			varying vec4 vColor;
+
+			void main()	
+			{
+				vec4 color;
+				color = vec4( vColor );
+				color.r += sin( vPosition.x * 10.0 + time ) * 0.5;
+				color.g += sin( vPosition.x * 10.0 + time ) * 0.5;
+       			color.b += cos( vPosition.x * 5.0 + time  ) * 0.5;
+				gl_FragColor = color;
+			}
+
+		</script>
+
+		<script>
+	  		var container;
+			var camera, scene, renderer;
+		    var vs1 = document.getElementById( 'vertexShader1' ).textContent;
+		    var fs1 = document.getElementById( 'fragmentShader1' ).textContent;
+		    var vs2 = document.getElementById( 'vertexShader2' ).textContent;
+		    var fs2 = document.getElementById( 'fragmentShader2' ).textContent;
+		    var vs3 = document.getElementById( 'vertexShader3' ).textContent;
+		    var fs3 = document.getElementById( 'fragmentShader3' ).textContent;
+
+
+			init();
+			animate();
+
+			function init() {
+
+				container = document.getElementById( 'container' );
+
+				camera = new THREE.PerspectiveCamera( 50.0, window.innerWidth / window.innerHeight, 0.1, 10 );
+				camera.position.z = 5;
+
+				scene = new THREE.Scene();
+
+				// geometry
+
+				var geometry1 = new THREE.CylinderGeometry( 0, 1, 2, 20 );	    
+				//var geometry3 = new THREE.TorusKnotGeometry( 0.5, 0.15, 100, 16 );
+				var geometry3 = new THREE.TorusKnotGeometry( 0.5, 0.15, 100, 16 );
+				//var geometry3 = new THREE.SphereGeometry( 1, 64, 64 );
+
+				var geometry2 = new THREE.BoxGeometry( 1, 1, 1 );
+				var loader = new THREE.TextureLoader();
+				var texture = loader.load( 'texture1.png', render );
+				texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+				texture.matrixAutoUpdate = false; // set this to false to update texture.matrix manually
+				var material2 = new THREE.MeshPhongMaterial( { map: texture } );
+
+
+				
+
+
+       
+				// material
+
+ 				var material1 = new THREE.RawShaderMaterial( {
+
+				uniforms: {
+					time: { type: "f", value: 1.0 },
+        					my_color: { type: "v4", value: new THREE.Vector4(1.0,0.2,0.0,1.0) }
+				},
+				vertexShader: vs1,
+				fragmentShader: fs1,
+				
+				} );
+
+ 				/*
+    			var material2 = new THREE.RawShaderMaterial( {
+
+				uniforms: {
+					time: { type: "f", value: 1.0 },
+        					my_color: { type: "v4", value: new THREE.Vector4(0.0,0.0,0.0,1.0) }
+				},
+				vertexShader: vs2,
+				fragmentShader: fs2,
+			
+    			} );
+				*/
+
+				var material3 = new THREE.RawShaderMaterial( {
+
+				uniforms: {
+					time: { type: "f", value: 1.0 },
+        					my_color: { type: "v4", value: new THREE.Vector4(0.0,0.0,1.0,1.0) }
+				},
+				vertexShader: vs3,
+				fragmentShader: fs3,
+			
+    			} );
+
+
+
+
+				var mesh1 = new THREE.Mesh( geometry1, material1 );
+				mesh1.translateX(-2.0);
+        		scene.add( mesh1 );
+
+        
+	      		var mesh2 = new THREE.Mesh( geometry2, material2 );
+			  	mesh2.translateX(0.0);
+       			scene.add( mesh2 );
+
+				var mesh3 = new THREE.Mesh( geometry3, material3 );
+			  	mesh3.translateX(2.0);
+       			scene.add( mesh3 );
+
+       			var light = new THREE.PointLight( 0xffffff, 1, 100 );
+				light.position.set( 0, 2, 0 );
+				scene.add( light );
+
+				var light = new THREE.PointLight( 0xffffff, 1, 100 );
+				light.position.set( 0, 0, 2 );
+				scene.add( light );
+
+				var light = new THREE.PointLight( 0xffffff, 1, 100 );
+				light.position.set( 0, 0, -2 );
+				scene.add( light );
+
+
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setClearColor( 0x999999 );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				container.appendChild( renderer.domElement );
+
+		
+        		window.addEventListener( 'resize', onWindowResize, false );
+
+			}
+
+			function onWindowResize( event ) {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+			}
+
+			
+			function animate() {
+				requestAnimationFrame( animate );
+				render();
+			}
+
+			function render() {
+				var time = performance.now();
+
+				var object1 = scene.children[ 0 ];
+				object1.rotation.x = time * 0.0009;
+				object1.rotation.y = time * 0.0005;
+				object1.material.uniforms.time.value = time * 0.005;
+
+        		var object2 = scene.children[ 1 ];
+				object2.rotation.x = time * 0.0005;
+				object2.rotation.y = time * 0.0009;
+				//object2.material.uniforms.time.value = time * 0.002;
+
+				var object3 = scene.children[ 2 ];
+				object3.rotation.z = time * 0.0007;
+				object3.rotation.y = time * 0.0003;
+				object3.material.uniforms.time.value = time * 0.003;
+
+
+				renderer.render( scene, camera );
+			}
+
+		</script>
+
+	</body>
+</html>
+
