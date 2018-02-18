@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - blender -json</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				background:#777;
+				padding:0;
+				margin:0;
+				overflow:hidden;
+			}
+
+			#info {
+				position: absolute;
+				top: 0px;
+				width: 100%;
+				color: #ffffff;
+			}
+
+		</style>
+	</head>
+	<body>
+
+	<div id="container"></div>
+
+	<script src="js/three.js"></script>
+	<script src="js/OrbitControls.js"></script>
+	<script type='text/javascript' src='dat.gui.min.js'></script>
+	<script src="js/controls/OrbitControls.js"></script>
+
+  <script id="skyboxVS" type="x-shader/x-vertex">
+
+	uniform mat4 modelMatrix;
+	uniform mat4 viewMatrix;
+      	uniform mat4 projectionMatrix;
+
+     	attribute vec3 position; 
+
+	varying vec3 vWorldPosition;
+	
+	void main() {
+
+		vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
+		vWorldPosition = worldPosition.xyz;
+
+		vec4 p = viewMatrix * modelMatrix * vec4(position, 1.0);
+		gl_Position = projectionMatrix * p;
+		
+     	 }
+
+    </script>
+
+
+    <script id="skyboxFS" type="x-shader/x-fragment">
+
+		precision mediump float;
+		
+		uniform samplerCube tCube;
+		varying vec3 vWorldPosition;
+
+		void main() {
+
+			gl_FragColor = textureCube( tCube, vec3(  vWorldPosition ) );
+		}
+	
+    </script>
+
+
+    <script id="environmentMapVS" type="x-shader/x-vertex">
+
+	uniform mat4 modelMatrix;
+	uniform mat4 viewMatrix;
+      	uniform mat4 projectionMatrix;
+
+	uniform vec3 cameraPosition;
+	
+     	attribute vec3 position; 
+     	attribute vec3 normal; 
+
+	varying vec3 vI;
+	varying vec3 vWorldNormal;
+
+	void main() {
+  		vec4 mvPosition = viewMatrix * modelMatrix * vec4( position, 1.0 );
+  		vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
+
+  		vWorldNormal = normalize( mat3( modelMatrix[0].xyz, modelMatrix[1].xyz, modelMatrix[2].xyz ) * normal );
+
+  		vI = worldPosition.xyz - cameraPosition;
+
+  		gl_Position = projectionMatrix * mvPosition;
+	}	
+  
+	</script>
+
+	 <script id="environmentMapFS" type="x-shader/x-fragment">
+
+		precision mediump float;
+
+		uniform samplerCube envMap;
+
+		varying vec3 vI, vWorldNormal;
+
+		void main() {
+				vec3 reflection = reflect( vI, vWorldNormal );
+				vec4 envColor = textureCube( envMap, vec3( -reflection.x, reflection.yz ) );
+				gl_FragColor = vec4(envColor);
+		}
+
+	</script>
+
+	<script id="vertexShader" type="x-shader/x-vertex">
+
+	uniform mat4 modelMatrix;
+	uniform mat4 viewMatrix;
+	uniform mat4 projectionMatrix;
+	uniform sampler2D tPic;
+
+	attribute vec3 position;
+	attribute vec2 uv;
+	attribute vec3 normal;
+
+	uniform float displaceAmt; //controls the amount of vertex displacement...
+
+	varying float vDisplace; 
+	varying vec2 vUv;
+	precision mediump float;
+
+
+	void main() {
+	   
+	   	vUv = uv;
+		
+		vec4 clr = texture2D(tPic, uv);
+		vDisplace = clr.r * -displaceAmt; //displacement;
+	    vec3 newPosition = (position.xyz + normal.xyz * vDisplace).xyz;
+	   	gl_Position = projectionMatrix  * viewMatrix * modelMatrix  * vec4( newPosition, 1.0 );
+	}
+
+	</script>
+	<script id="fragmentShader" type="x-shader/x-fragment">
+
+	precision mediump float;
+
+
+	uniform sampler2D tPic;
+	varying vec2 vUv;
+	varying float vDisplace; 
+
+
+	void main() {
+		float zOffset = vDisplace;
+		vec4 draven = texture2D(tPic ,vUv);
+		gl_FragColor = draven;      
+	}
+
+	</script>
+  <script id="texVS" type="x-shader/x-vertex">
+
+	//Three.js gives us these automatically when a perspective camera is bound to the renderer
+	uniform mat4 modelMatrix;
+	uniform mat4 viewMatrix;
+      	uniform mat4 projectionMatrix;
+
+     	attribute vec3 position;
+	attribute vec2 uv;
+
+	varying vec2 vUV;
+
+	void main() {
+        	vec4 position = viewMatrix * modelMatrix * vec4(position, 1.0);
+	   		vUV = uv;
+        	gl_Position = projectionMatrix * position; 
+     	 }
+
+    </script>
+
+    <script id="texFS" type="x-shader/x-fragment">
+
+	precision mediump float;
+
+	uniform sampler2D tex;
+	varying vec2 vUV;
+
+      	void main() {
+
+		vec4 c = texture2D(tex, vUV);
+        	//gl_FragColor = vec4(vUV.xy, 0.0, 1.0);
+        	gl_FragColor = vec4(c.rgb, 1.0);
+	}
+
+	</script>
+
+
+
+	<script>
+
+		var sb_vs = document.getElementById( 'skyboxVS' ).textContent;
+      	var sb_fs = document.getElementById( 'skyboxFS' ).textContent;
+		var em_vs = document.getElementById( 'environmentMapVS' ).textContent;
+      	var em_fs = document.getElementById( 'environmentMapFS' ).textContent;
+		var tex_vs = document.getElementById( 'texVS' ).textContent;
+      	var tex_fs = document.getElementById( 'texFS' ).textContent;
+		var vs = document.getElementById( 'vertexShader' ).textContent;
+		var fs = document.getElementById( 'fragmentShader' ).textContent;
+
+
+		var container;
+		var camera, scene, renderer, controls;
+		var params, gui;
+		var water_plane;
+
+		var skyMesh, box;
+
+		var texture1;
+		var texture_draven = new THREE.TextureLoader().load( 'Draven_Draven.png' );
+
+		init();
+		animate();
+
+		
+
+
+		function init() {
+
+			container = document.getElementById( 'container' );
+
+			camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 1, 2000 );
+			camera.position.set( 0, 0, 5 );
+			controls = new THREE.OrbitControls( camera );
+
+			gui = new dat.GUI({
+    			height : 5 * 32 - 1
+			});
+			
+			params = {
+    			camera_z: 5.0,
+    			water_plane_y: 0.5
+    			//displacement: 1.0
+			};
+			gui.add(params, 'camera_z');
+			gui.add(params, 'water_plane_y');
+
+			scene = new THREE.Scene();
+
+			var cubeMap = new THREE.CubeTextureLoader()
+				.setPath("./Lycksele/")
+				.load( [
+					'posx.jpg',
+					'negx.jpg',
+					'posy.jpg',
+					'negy.jpg',
+					'posz.jpg',
+					'negz.jpg'
+				] );
+			
+			var uniforms = { "tCube": { type: "t", value: cubeMap } };
+			
+			var material = new THREE.RawShaderMaterial( {
+					uniforms: uniforms,
+					vertexShader: sb_vs,
+					fragmentShader: sb_fs
+				} );
+
+
+			material.depthWrite = false;
+      		material.side = THREE.BackSide;
+			
+
+			var geometry = new THREE.BoxGeometry( 2000, 2000, 2000 );
+
+			skyMesh = new THREE.Mesh( geometry, material );
+
+
+			scene.add( skyMesh );
+
+			var geometry2 = new THREE.PlaneGeometry( 5, 5, 300, 300 );
+
+			var uniforms2 = {
+		        	tCube: { type: "t", value: cubeMap },
+			};
+
+			var material2 = new THREE.RawShaderMaterial( {
+							uniforms: uniforms2,
+							vertexShader: em_vs,
+							fragmentShader: em_fs
+			} );
+
+			water_plane = new THREE.Mesh( geometry2, material2);
+			water_plane.material.side = THREE.DoubleSide;
+			water_plane.rotateX(-Math.PI/2);
+			
+			
+			var geometry3 = new THREE.PlaneGeometry( 5, 5, 300, 300 );
+
+			var uniforms3 =  {
+				displaceAmt: { type: "f", value: 1.0 },
+				tPic: { type: "t", value: texture_draven  },
+			};
+
+
+			var material3 = new THREE.RawShaderMaterial( {
+				uniforms: uniforms3,
+				vertexShader: vs,
+				fragmentShader: fs,
+
+			} );
+
+			
+			var plane = new THREE.Mesh( geometry3, material3 );
+			plane.material.side = THREE.DoubleSide;
+			plane.rotateX(-Math.PI/2);
+			plane.position.y = 1;
+			scene.add( plane );
+			scene.add( water_plane );
+
+			renderer = new THREE.WebGLRenderer();
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			container.appendChild( renderer.domElement );
+
+			window.addEventListener( 'resize', onWindowResize, false );
+			document.addEventListener('mousemove', onDocumentMouseMove, false);
+
+		}
+
+
+function onWindowResize( event ) {
+
+	renderer.setSize( window.innerWidth, window.innerHeight );
+
+	camera.aspect = window.innerWidth / window.innerHeight;
+	camera.updateProjectionMatrix();
+}
+
+
+function animate() {
+
+	requestAnimationFrame( animate );
+	render();
+}
+
+
+function render() {
+	camera.position.set( camera.position.x, camera.position.y, params.camera_z);
+	controls.update();
+	water_plane.position.y = params.water_plane_y;
+
+
+	renderer.render( scene, camera );
+}
+
+function onDocumentMouseMove(event) {
+	event.preventDefault();
+
+	mouseX = (event.clientX / window.innerWidth) ;
+	mouseY = -(event.clientY / window.innerHeight) ;
+
+}
+
+
+	</script>
+	</body>
+</html>
